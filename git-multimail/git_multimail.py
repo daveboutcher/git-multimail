@@ -2253,6 +2253,9 @@ class Push(object):
         self.changes = sorted(changes, key=self._sort_key)
         self.environment = environment
 
+        # store branch regex
+        self.branch_regex = self.environment.get_branches()
+
         # The SHA-1s of commits referred to by references unaffected
         # by this push:
         other_ref_sha1s = self._compute_other_ref_sha1s()
@@ -2276,11 +2279,13 @@ class Push(object):
     def _sort_key(klass, change):
         return (klass.SORT_ORDER[change.__class__, change.change_type], change.refname,)
 
+    def filtering_branches(self):
+        return self.branch_regex
+
     def branches_match(self, branch):
-        branches = self.environment.get_branches()
-        if not branches:
-            return [True]
-        return [x for x in [r.match(branch) for r in branches] if x]
+        if not self.filtering_branches():
+            return True
+        return any(r.match(branch) for r in self.branch_regex)
 
     def _compute_other_ref_sha1s(self):
         """Return the GitObjects referred to by references unaffected by this push."""
@@ -2399,6 +2404,11 @@ class Push(object):
                     change.generate_email(self, body_filter, extra_values),
                     change.recipients,
                     )
+
+            # if we are filtering on branches and this is NOT a branch, skip sending commit
+            # emails
+            if change.refname_type != 'branch' and self.filtering_branches():
+                continue
 
             max_emails = change.environment.maxcommitemails
             if max_emails and len(sha1s) > max_emails:
